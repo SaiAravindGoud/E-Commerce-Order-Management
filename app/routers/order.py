@@ -1,4 +1,3 @@
-
 from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -317,6 +316,7 @@ def cancel_order(
 def update_order_status(
     order_id: int,
     new_status: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -382,6 +382,26 @@ def update_order_status(
 
     db.commit()
     db.refresh(order)
+
+    # Send shipped notification in the background
+    if new_status == "Shipped":
+        customer = db.get(User, order.customer_id)
+
+        if customer is not None:
+            background_tasks.add_task(
+                send_email,
+                customer.email,
+                "Order Shipped - E-Commerce",
+                (
+                    f"Hello {customer.username},\n\n"
+                    f"Your order has been shipped successfully.\n\n"
+                    f"Order Number: {order.order_number}\n"
+                    f"Order Status: {order.status}\n"
+                    f"Payment Status: {order.payment_status}\n\n"
+                    "Your order is on the way.\n\n"
+                    "Thank you for shopping with us."
+                ),
+            )
 
     return {
         "message": "Order status updated successfully",

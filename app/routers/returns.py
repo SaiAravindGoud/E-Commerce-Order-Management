@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,7 @@ from app.schemas.return_schema import (
     ReturnReject,
     ReturnResponse,
 )
+from app.services.email_service import send_email
 
 
 router = APIRouter(
@@ -122,6 +123,7 @@ def get_my_returns(
 )
 def approve_return(
     return_id: int,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -167,6 +169,25 @@ def approve_return(
 
     db.commit()
     db.refresh(return_request)
+
+    customer = db.get(User, order.customer_id)
+
+    if customer is not None:
+        background_tasks.add_task(
+            send_email,
+            customer.email,
+            "Refund Processed - E-Commerce",
+            (
+                f"Hello {customer.username},\n\n"
+                f"Your refund has been processed successfully.\n\n"
+                f"Order Number: {order.order_number}\n"
+                f"Refund Amount: ₹{return_request.refund_amount}\n"
+                f"Return Status: {return_request.status}\n"
+                f"Payment Status: {order.payment_status}\n\n"
+                "The refund has been processed for your returned order.\n\n"
+                "Thank you for shopping with us."
+            ),
+        )
 
     return return_request
 
